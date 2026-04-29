@@ -24,3 +24,6 @@ venv/
 node_modules/
 gas/.clasp.json
 .clasprc.json
+
+# Local server state (個人設定とキャッシュ)
+.state/

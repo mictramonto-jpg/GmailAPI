@@ -14,6 +14,25 @@ Gmail を自動仕分けする 2 つの実装が含まれます。
 
 → **デプロイ手順**: [`gas/README.md`](./gas/README.md)
 
+## 🖥 ローカルサーバー版 (Python + Flask)
+
+PC で `python local_server.py` を実行してブラウザでアクセスする版。
+**データを完全にローカルに保つ**ことができ、既存の `credentials.json` をそのまま使えます。
+
+```powershell
+cd $HOME\GmailAPI
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy rules.example.yaml rules.yaml    # 初回のみ
+python local_server.py
+```
+
+→ ブラウザが自動で <http://localhost:5000> を開きます。
+
+機能は GAS 版とほぼ同等 (実行・分析・ルール編集・ホワイトリスト・解除リンク・LLM 切替・キャッシュ)。
+PC 起動中のみ動作。自動実行はタスクスケジューラ要。
+
 ## CLI 版 (Python)
 
 YAML ルールで Gmail を整理するコマンドラインツール (深掘りしたい人向け)。

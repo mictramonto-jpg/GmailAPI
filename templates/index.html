@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Gmail Organizer (Local)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f7f7fb; --card: #ffffff; --line: #e5e7eb;
+    --primary: #2563eb; --primary-d: #1d4ed8;
+    --danger: #dc2626; --good: #059669; --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    font-size: 14px; color: #111827;
+  }
+  h1 { margin: 0 0 12px; font-size: 20px; }
+  h2 { margin: 0 0 8px; font-size: 16px; }
+  .layout { display: grid; gap: 12px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  button {
+    background: var(--primary); color: #fff; border: 0; padding: 8px 14px;
+    border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  button:hover { background: var(--primary-d); }
+  button.secondary { background: #fff; color: #111827; border: 1px solid var(--line); }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: .5; cursor: wait; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 14px;
+    font-family: inherit; width: 100%;
+  }
+  textarea { font-family: ui-monospace, "SFMono-Regular", "Consolas", monospace; min-height: 320px; }
+  label.form { display: block; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+  .pill.warn { background: #fef3c7; color: #92400e; }
+  .pill.ok { background: #d1fae5; color: #065f46; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f9fafb; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .toast { position: fixed; bottom: 16px; right: 16px; background: #111827; color: #fff;
+    padding: 10px 14px; border-radius: 8px; opacity: 0; transition: opacity .3s;
+    pointer-events: none; max-width: 60%; }
+  .toast.show { opacity: 1; }
+  code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  details { margin-top: 6px; }
+  details > summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <h1>📬 Gmail Organizer <span class="pill">🖥 Local</span></h1>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="run">▶️ 実行</div>
+    <div class="tab" data-tab="rules">📋 ルール</div>
+    <div class="tab" data-tab="whitelist">⭐ ホワイトリスト</div>
+    <div class="tab" data-tab="unsub">🔕 解除リンク</div>
+    <div class="tab" data-tab="settings">⚙️ 設定</div>
+  </div>
+
+  <div class="panel active" data-panel="run">
+    <div class="card">
+      <div class="row">
+        <label class="form" style="flex:1;min-width:240px;">検索クエリ
+          <input id="run-query" type="text" value="in:inbox newer_than:7d">
+        </label>
+        <label class="form" style="width:120px;">最大件数
+          <input id="run-max" type="number" value="200" min="1" max="500">
+        </label>
+        <div style="margin-top:18px;">
+          <button id="btn-analyze" class="secondary">📊 分析</button>
+          <button id="btn-dry">👀 ドライラン</button>
+          <button id="btn-apply" class="danger">✅ 本番適用</button>
+        </div>
+      </div>
+    </div>
+    <div id="result" class="card" style="display:none;">
+      <h2>結果</h2>
+      <div id="result-summary"></div>
+      <div id="result-table"></div>
+    </div>
+  </div>
+
+  <div class="panel" data-panel="rules">
+    <div class="card">
+      <h2>ルール (YAML)</h2>
+      <p class="small muted"><code>rules.yaml</code> を直接編集します。
+        match.from / subject は正規表現。has_list_unsubscribe: true でメルマガ限定。</p>
+      <textarea id="rules-text" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-rules-save">💾 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" data-panel="whitelist">
+    <div class="card">
+      <h2>⭐ ホワイトリスト</h2>
+      <p class="small muted">登録された送信者は仕分け対象外 (受信トレイに残る)。
+        <code>foo@bar.com</code> / <code>@bar.com</code> / <code>/regex/i</code> / <code># コメント</code></p>
+      <textarea id="whitelist-text" spellcheck="false" placeholder="@yourcompany.co.jp&#10;family@example.com"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-whitelist-save">💾 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" data-panel="unsub">
+    <div class="card">
+      <h2>メルマガ解除リンク</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <button id="btn-unsub-open-all" class="secondary">🌐 全 URL をタブで開く</button>
+        <span class="small muted">※ ブラウザのポップアップブロックを許可</span>
+      </div>
+      <div id="unsub-list" class="small muted">実行タブで「ドライラン」を実行するとここに表示されます。</div>
+    </div>
+  </div>
+
+  <div class="panel" data-panel="settings">
+    <div class="card">
+      <h2>基本設定</h2>
+      <div class="grid2">
+        <div>
+          <label class="form">デフォルトクエリ</label>
+          <input id="set-query" type="text">
+          <label class="form">最大件数</label>
+          <input id="set-max" type="number" min="1" max="500">
+        </div>
+        <div>
+          <label class="form">未分類メールラベル</label>
+          <input id="set-review" type="text">
+          <label class="form">不要メールラベル</label>
+          <input id="set-unwanted" type="text">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🤖 LLM 分類 (任意)</h2>
+      <label class="form">プロバイダ</label>
+      <select id="set-llm-provider">
+        <option value="none">なし (ルールのみ)</option>
+        <option value="gemini">Gemini (Google・無料枠あり)</option>
+        <option value="claude">Claude (Anthropic・高精度)</option>
+      </select>
+
+      <div id="gemini-settings" style="display:none;margin-top:8px;">
+        <p class="small muted">API キーは <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> で発行 (無料)</p>
+        <label class="form">Gemini API Key</label>
+        <input id="set-gemini-key" type="password" placeholder="AIza...">
+        <label class="form">モデル</label>
+        <select id="set-gemini-model">
+          <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+        </select>
+        <div class="row" style="margin-top:8px;">
+          <button id="btn-gemini-test" class="secondary">🔍 テスト</button>
+          <span id="gemini-test-result" class="small muted"></span>
+        </div>
+      </div>
+
+      <div id="claude-settings" style="display:none;margin-top:8px;">
+        <p class="small muted">API キーは <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a> で発行 (要クレカ)</p>
+        <label class="form">Claude API Key</label>
+        <input id="set-claude-key" type="password" placeholder="sk-ant-...">
+        <label class="form">モデル</label>
+        <select id="set-claude-model">
+          <option value="claude-opus-4-7">claude-opus-4-7 (最高・$5/$25)</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 ($3/$15)</option>
+          <option value="claude-haiku-4-5">claude-haiku-4-5 (最安・$1/$5)</option>
+        </select>
+        <div class="row" style="margin-top:8px;">
+          <button id="btn-claude-test" class="secondary">🔍 テスト</button>
+          <span id="claude-test-result" class="small muted"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>💾 LLM 結果キャッシュ</h2>
+      <p class="small muted">送信者単位でキャッシュ (30 日)。同じメルマガを再分類しないことで API コスト削減。</p>
+      <div class="row">
+        <button id="btn-cache-stats" class="secondary">📊 統計</button>
+        <button id="btn-cache-clear" class="danger">🗑 全クリア</button>
+        <span id="cache-stats" class="small muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <button id="btn-settings-save">💾 設定を保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const $ = function(id) { return document.getElementById(id); };
+function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(function() { t.classList.remove('show'); }, 2400); }
+function busy(btn, b) { if (b) { btn.dataset.label = btn.textContent; btn.textContent = '...'; btn.disabled = true; } else { btn.textContent = btn.dataset.label; btn.disabled = false; } }
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+document.querySelectorAll('.tab').forEach(function(t) {
+  t.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function(x) { x.classList.remove('active'); });
+    t.classList.add('active');
+    document.querySelector('[data-panel="' + t.dataset.tab + '"]').classList.add('active');
+  });
+});
+
+async function api(path, opts) {
+  const r = await fetch(path, opts || {});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const ct = r.headers.get('content-type') || '';
+  return ct.indexOf('json') >= 0 ? r.json() : r.text();
+}
+
+function syncProviderVisibility() {
+  var p = $('set-llm-provider').value;
+  $('gemini-settings').style.display = p === 'gemini' ? 'block' : 'none';
+  $('claude-settings').style.display = p === 'claude' ? 'block' : 'none';
+}
+$('set-llm-provider').addEventListener('change', syncProviderVisibility);
+
+async function loadSettings() {
+  const s = await api('/api/settings');
+  $('set-query').value = s.query || '';
+  $('set-max').value = s.max_messages || 200;
+  $('set-review').value = s.review_label || '';
+  $('set-unwanted').value = s.unwanted_label || '';
+  $('set-llm-provider').value = s.llm_provider || 'none';
+  $('set-gemini-key').value = s.gemini_api_key || '';
+  $('set-gemini-model').value = s.gemini_model || 'gemini-2.5-flash';
+  $('set-claude-key').value = s.claude_api_key || '';
+  $('set-claude-model').value = s.claude_model || 'claude-opus-4-7';
+  $('whitelist-text').value = s.whitelist || '';
+  $('run-query').value = s.query || '';
+  $('run-max').value = s.max_messages || 200;
+  syncProviderVisibility();
+}
+
+async function loadRules() {
+  try { $('rules-text').value = await api('/api/rules'); }
+  catch (e) { $('rules-text').value = '# rules.yaml が見つかりません。\n# cp rules.example.yaml rules.yaml で作成してください。\n'; }
+}
+
+$('btn-rules-save').addEventListener('click', async function() {
+  var btn = this; busy(btn, true);
+  try { await api('/api/rules', {method: 'POST', body: $('rules-text').value, headers: {'Content-Type': 'text/plain'}}); toast('ルールを保存しました'); }
+  catch (e) { toast('保存失敗: ' + e.message); }
+  busy(btn, false);
+});
+
+$('btn-whitelist-save').addEventListener('click', async function() {
+  var btn = this; busy(btn, true);
+  const cur = await api('/api/settings');
+  cur.whitelist = $('whitelist-text').value;
+  await api('/api/settings', {method: 'POST', body: JSON.stringify(cur), headers: {'Content-Type': 'application/json'}});
+  toast('ホワイトリストを保存しました'); busy(btn, false);
+});
+
+$('btn-settings-save').addEventListener('click', async function() {
+  var btn = this; busy(btn, true);
+  const s = await api('/api/settings');
+  Object.assign(s, {
+    query: $('set-query').value, max_messages: parseInt($('set-max').value, 10),
+    review_label: $('set-review').value, unwanted_label: $('set-unwanted').value,
+    llm_provider: $('set-llm-provider').value,
+    gemini_api_key: $('set-gemini-key').value, gemini_model: $('set-gemini-model').value,
+    claude_api_key: $('set-claude-key').value, claude_model: $('set-claude-model').value,
+  });
+  await api('/api/settings', {method: 'POST', body: JSON.stringify(s), headers: {'Content-Type': 'application/json'}});
+  toast('保存しました'); busy(btn, false); loadSettings();
+});
+
+function renderUnsub(list) {
+  __lastUnsub = list || [];
+  if (!list.length) { $('unsub-list').textContent = 'List-Unsubscribe ヘッダ付きメールは見つかりませんでした。'; return; }
+  var html = '<p class="small muted">' + list.length + ' 送信者見つかりました。</p>';
+  html += list.map(function(e) {
+    var urls = e.urls.map(function(u) { return '<li><a href="' + escapeHtml(u) + '" target="_blank">' + escapeHtml(u) + '</a></li>'; }).join('');
+    var mailtos = e.mailtos.map(function(m) { return '<li><a href="' + escapeHtml(m) + '">' + escapeHtml(m) + '</a></li>'; }).join('');
+    var subjs = e.subjects.map(function(s) { return '<li class="muted small">' + escapeHtml(s) + '</li>'; }).join('');
+    return '<div class="card" style="margin-top:8px;"><b>' + escapeHtml(e.sender) + '</b> '
+      + (e.one_click ? '<span class="pill ok">one-click</span>' : '')
+      + '<ul>' + urls + mailtos + '</ul>'
+      + (subjs ? '<details><summary>直近 ' + e.subjects.length + ' 件</summary><ul>' + subjs + '</ul></details>' : '')
+      + '</div>';
+  }).join('');
+  $('unsub-list').innerHTML = html;
+}
+var __lastUnsub = [];
+
+$('btn-unsub-open-all').addEventListener('click', function() {
+  if (!__lastUnsub.length) { toast('リンクがまだありません'); return; }
+  var urls = []; __lastUnsub.forEach(function(e) { e.urls.forEach(function(u) { urls.push(u); }); });
+  if (!urls.length) { toast('http(s) URL がありません'); return; }
+  if (!confirm(urls.length + ' 件のタブを開きます。続行しますか?')) return;
+  urls.forEach(function(u, i) { setTimeout(function() { window.open(u, '_blank'); }, i * 250); });
+});
+
+function renderResult(r) {
+  $('result').style.display = 'block';
+  var keys = Object.keys(r.counts).sort(function(a, b) { return r.counts[b] - r.counts[a]; });
+  var summary = '<p>対象 <b>' + r.total + '</b> 件 / クエリ <code>' + escapeHtml(r.query) + '</code> '
+    + (r.dry_run ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill ok">適用済</span>') + '</p>';
+  summary += '<table><tr><th>ルール</th><th>件数</th></tr>'
+    + keys.map(function(k) { return '<tr><td>' + escapeHtml(k) + '</td><td>' + r.counts[k] + '</td></tr>'; }).join('')
+    + '</table>';
+  $('result-summary').innerHTML = summary;
+  var rows = (r.previews || []).map(function(p) {
+    var g = p.llm ? '<span class="pill">🤖 ' + escapeHtml(p.provider || 'LLM') + '</span> ' : '';
+    return '<tr><td class="truncate">' + escapeHtml(p.from) + '</td><td class="truncate">' + escapeHtml(p.subject) + '</td><td>' + g + escapeHtml(p.rule) + '</td><td class="small muted">' + escapeHtml(p.action) + '</td></tr>';
+  }).join('');
+  $('result-table').innerHTML = '<table><tr><th>From</th><th>Subject</th><th>適用ルール</th><th>動作</th></tr>' + rows + '</table>';
+  renderUnsub(r.unsubscribe || []);
+}
+
+function renderStats(s) {
+  $('result').style.display = 'block';
+  var rows = function(arr) { return arr.map(function(x) { var p = x.isPromo ? ' 📨' : ''; return '<tr><td>' + x.count + '</td><td>' + escapeHtml(x.key) + p + '</td></tr>'; }).join(''); };
+  $('result-summary').innerHTML = '<p>対象 ' + s.total + ' 件 / 送信者 ' + s.uniqueSenders + ' / メルマガ送信者 ' + s.promoSenders + '</p>';
+  $('result-table').innerHTML = '<div class="grid2">'
+    + '<div><h2>送信者 TOP20</h2><table><tr><th>件数</th><th>From</th></tr>' + rows(s.topSenders) + '</table></div>'
+    + '<div><h2>メルマガ送信者 TOP20</h2><table><tr><th>件数</th><th>From</th></tr>' + rows(s.topPromo) + '</table></div></div>';
+}
+
+$('btn-analyze').addEventListener('click', async function() {
+  var btn = this; busy(btn, true);
+  try { renderStats(await api('/api/analyze', {method: 'POST', body: JSON.stringify({query: $('run-query').value, max: parseInt($('run-max').value, 10)}), headers: {'Content-Type': 'application/json'}})); toast('分析完了'); }
+  catch (e) { toast('エラー: ' + e.message); }
+  busy(btn, false);
+});
+
+async function runMode(dry) {
+  if (!dry && !confirm('本番適用します。よろしいですか?')) return;
+  const btn = dry ? $('btn-dry') : $('btn-apply'); busy(btn, true);
+  try { renderResult(await api('/api/run', {method: 'POST', body: JSON.stringify({query: $('run-query').value, max: parseInt($('run-max').value, 10), dry_run: dry}), headers: {'Content-Type': 'application/json'}})); toast(dry ? 'ドライラン完了' : '適用完了'); }
+  catch (e) { toast('エラー: ' + e.message); }
+  busy(btn, false);
+}
+$('btn-dry').addEventListener('click', function() { runMode(true); });
+$('btn-apply').addEventListener('click', function() { runMode(false); });
+
+async function testLlm(provider, resultEl) {
+  resultEl.textContent = '...';
+  try {
+    const r = await api('/api/test_llm', {method: 'POST', body: JSON.stringify({provider: provider}), headers: {'Content-Type': 'application/json'}});
+    if (r.error) resultEl.textContent = '失敗 (キー未設定 or エラー)';
+    else resultEl.textContent = '✓ ' + r.category + ' — ' + (r.reason || '');
+  } catch (e) { resultEl.textContent = 'エラー: ' + e.message; }
+}
+$('btn-gemini-test').addEventListener('click', function() { testLlm('gemini', $('gemini-test-result')); });
+$('btn-claude-test').addEventListener('click', function() { testLlm('claude', $('claude-test-result')); });
+
+$('btn-cache-stats').addEventListener('click', async function() {
+  const s = await api('/api/cache');
+  var parts = ['キャッシュ件数: ' + s.total];
+  Object.keys(s.byProvider || {}).forEach(function(k) { parts.push(k + '=' + s.byProvider[k]); });
+  $('cache-stats').textContent = parts.join(' / ');
+});
+$('btn-cache-clear').addEventListener('click', async function() {
+  if (!confirm('LLM キャッシュを全クリアします。続行?')) return;
+  await api('/api/cache', {method: 'DELETE'});
+  $('cache-stats').textContent = 'クリアしました';
+  toast('キャッシュをクリアしました');
+});
+
+loadSettings();
+loadRules();
+</script>
+</body>
+</html>

@@ -72,6 +72,21 @@ $EDITOR rules.yaml   # 自分のドメインや好みに合わせて書き換え
 
 ## 3. 使い方
 
+### Step 0: 受信トレイを分析してルール作成のヒントを得る (推奨)
+
+```bash
+python gmail_organizer.py --analyze --query "in:inbox newer_than:30d" --max 500
+```
+
+直近 30 日のメールから以下を表示します:
+
+- 送信者 TOP20 (件数順、メルマガ系には 📨 マーク)
+- ドメイン TOP20
+- メルマガ送信者 TOP20 (解除候補)
+- そのまま `rules.yaml` に貼れるルール雛形
+
+これを見てから `rules.yaml` を編集すると効率的です。
+
 ### まずはドライラン (実適用なし)
 
 ```bash
@@ -113,6 +128,7 @@ python gmail_organizer.py \
 | `--max` | 処理する最大メール数 | `200` |
 | `--dry-run` | 適用せず判定のみ | off |
 | `--unsubscribe-out` | 解除リンクを Markdown 出力 | なし |
+| `--analyze` | 受信トレイ統計を表示 (ルール作成の参考) | off |
 | `--credentials` | OAuth JSON のパス | `credentials.json` |
 | `--token` | トークン保存先 | `token.json` |
 

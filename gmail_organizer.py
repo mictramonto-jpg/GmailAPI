@@ -13,6 +13,7 @@ import base64
 import os
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -236,6 +237,78 @@ def apply(service, msg_id: str, rule: Rule, labels: LabelCache, default_label: s
 
 # ---------- メイン ----------
 
+SENDER_RE = re.compile(r"<([^>]+)>")
+
+
+def normalize_sender(raw: str) -> str:
+    """`Name <foo@bar.com>` → `foo@bar.com` (メアド単体ならそのまま)。"""
+    m = SENDER_RE.search(raw or "")
+    return (m.group(1) if m else raw or "").strip().lower()
+
+
+def sender_domain(addr: str) -> str:
+    return addr.split("@", 1)[1] if "@" in addr else addr
+
+
+def analyze(service, query: str, max_results: int, top_n: int = 20) -> None:
+    """受信トレイをスキャンして送信者・メルマガ統計を表示する。"""
+    msg_ids = list_message_ids(service, query, max_results)
+    print(f"対象メール: {len(msg_ids)} 件 (query={query!r})\n")
+
+    sender_count: Counter[str] = Counter()
+    domain_count: Counter[str] = Counter()
+    unsub_sender_count: Counter[str] = Counter()
+    promo_count = 0
+
+    for i, mid in enumerate(msg_ids, 1):
+        try:
+            msg = service.users().messages().get(
+                userId="me", id=mid, format="metadata",
+                metadataHeaders=["From", "List-Unsubscribe"],
+            ).execute()
+        except HttpError as e:
+            print(f"  ! {mid}: {e}", file=sys.stderr)
+            continue
+        headers = msg.get("payload", {}).get("headers", [])
+        sender = normalize_sender(_header(headers, "From"))
+        if not sender:
+            continue
+        sender_count[sender] += 1
+        domain_count[sender_domain(sender)] += 1
+        if _header(headers, "List-Unsubscribe"):
+            unsub_sender_count[sender] += 1
+            promo_count += 1
+        if i % 50 == 0:
+            print(f"  ... {i}/{len(msg_ids)} 件処理済み")
+
+    print(f"\n=== サマリー ===")
+    print(f"  ユニーク送信者: {len(sender_count)}")
+    print(f"  ユニークドメイン: {len(domain_count)}")
+    print(f"  メルマガ系 (List-Unsubscribe あり): {promo_count} 件 / {len(unsub_sender_count)} 送信者")
+
+    print(f"\n=== 送信者 TOP{top_n} (件数) ===")
+    for addr, n in sender_count.most_common(top_n):
+        marker = " 📨" if addr in unsub_sender_count else ""
+        print(f"  {n:>4}  {addr}{marker}")
+
+    print(f"\n=== ドメイン TOP{top_n} ===")
+    for dom, n in domain_count.most_common(top_n):
+        print(f"  {n:>4}  @{dom}")
+
+    if unsub_sender_count:
+        print(f"\n=== メルマガ送信者 TOP{top_n} (解除候補) ===")
+        for addr, n in unsub_sender_count.most_common(top_n):
+            print(f"  {n:>4}  {addr}")
+
+    print("\n--- ルール例 (rules.yaml に追記する候補) ---")
+    print("rules:")
+    for addr, _ in unsub_sender_count.most_common(5):
+        esc = re.escape(addr)
+        print(f"  - name: \"Unwanted: {addr}\"")
+        print(f"    match: {{ from: \"{esc}\" }}")
+        print(f"    action: {{ label: \"Org/Unwanted\", archive: true, mark_read: true }}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Gmail を YAML ルールで整理する")
     parser.add_argument("--rules", default="rules.yaml", help="ルール YAML のパス")
@@ -247,14 +320,24 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="実行せず判定結果のみ表示")
     parser.add_argument("--unsubscribe-out", default=None,
                         help="List-Unsubscribe を持つメールの解除リンク一覧を Markdown で出力するパス")
+    parser.add_argument("--analyze", action="store_true",
+                        help="受信トレイをスキャンして送信者統計を表示 (ルール作成の参考用)")
     args = parser.parse_args()
 
-    if not os.path.exists(args.rules):
-        print(f"ルールファイルが見つかりません: {args.rules}", file=sys.stderr)
-        return 2
     if not os.path.exists(args.credentials):
         print(f"認証情報が見つかりません: {args.credentials}\n"
               "README の手順で credentials.json を取得してください。", file=sys.stderr)
+        return 2
+
+    if args.analyze:
+        service = get_service(args.credentials, args.token)
+        analyze(service, args.query, args.max)
+        return 0
+
+    if not os.path.exists(args.rules):
+        print(f"ルールファイルが見つかりません: {args.rules}\n"
+              "  cp rules.example.yaml rules.yaml で雛形をコピーしてください。\n"
+              "  または --analyze で受信トレイの実態をまず確認できます。", file=sys.stderr)
         return 2
 
     rules, default_label = load_rules(args.rules)

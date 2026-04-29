@@ -1,6 +1,21 @@
 # Gmail Organizer
 
-YAML ルールで Gmail を整理する Python スクリプト。
+Gmail を自動仕分けする 2 つの実装が含まれます。
+
+## 🌟 推奨: Google Apps Script Web App 版 (`gas/`)
+
+**ブラウザだけで完結 / インストール不要 / クラウド常駐 / Gemini LLM 分類対応**
+
+- 📊 受信トレイ分析 + 📋 ルールベース仕分け + 🤖 LLM フォールバック
+- 🔕 メルマガ解除リンクを送信者ごとに集約 (one-click 表示)
+- ⏰ 1 時間ごとに自動実行 (PC オフでも OK)
+- 📱 Web UI でスマホからも操作可能
+
+→ **デプロイ手順**: [`gas/README.md`](./gas/README.md)
+
+## CLI 版 (Python)
+
+YAML ルールで Gmail を整理するコマンドラインツール (深掘りしたい人向け)。
 
 - 受信メールを **ラベル付与 + アーカイブ + 既読化** で自動仕分け
 - メルマガなど **`List-Unsubscribe` ヘッダ付きメールの解除リンクを Markdown 一覧に出力**

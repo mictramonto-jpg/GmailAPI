@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #f7f7fb; --card: #ffffff; --line: #e5e7eb;
+    --primary: #2563eb; --primary-d: #1d4ed8;
+    --danger: #dc2626; --good: #059669; --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    font-size: 14px; color: #111827;
+  }
+  h1 { margin: 0 0 12px; font-size: 20px; }
+  h2 { margin: 0 0 8px; font-size: 16px; }
+  .layout { display: grid; gap: 12px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  button {
+    background: var(--primary); color: #fff; border: 0; padding: 8px 14px;
+    border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  button:hover { background: var(--primary-d); }
+  button.secondary { background: #fff; color: #111827; border: 1px solid var(--line); }
+  button.danger { background: var(--danger); }
+  button:disabled { opacity: .5; cursor: wait; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 14px;
+    font-family: inherit; width: 100%;
+  }
+  textarea { font-family: ui-monospace, "SFMono-Regular", "Consolas", monospace; min-height: 320px; }
+  label.form { display: block; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+  .pill.warn { background: #fef3c7; color: #92400e; }
+  .pill.bad { background: #fee2e2; color: #991b1b; }
+  .pill.ok { background: #d1fae5; color: #065f46; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f9fafb; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .toast { position: fixed; bottom: 16px; right: 16px; background: #111827; color: #fff;
+    padding: 10px 14px; border-radius: 8px; opacity: 0; transition: opacity .3s;
+    pointer-events: none; max-width: 60%; }
+  .toast.show { opacity: 1; }
+  code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  details { margin-top: 6px; }
+  details > summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <h1>📬 Gmail Organizer <span id="trigger-status" class="pill" style="font-size:12px"></span></h1>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="run">▶️ 実行</div>
+    <div class="tab" data-tab="rules">📋 ルール</div>
+    <div class="tab" data-tab="unsub">🔕 解除リンク</div>
+    <div class="tab" data-tab="settings">⚙️ 設定</div>
+  </div>
+
+  <!-- ===== 実行タブ ===== -->
+  <div class="panel active" data-panel="run">
+    <div class="card">
+      <div class="row">
+        <label class="form" style="flex:1;min-width:240px;">
+          検索クエリ
+          <input id="run-query" type="text" value="in:inbox newer_than:7d">
+        </label>
+        <label class="form" style="width:120px;">
+          最大件数
+          <input id="run-max" type="number" value="200" min="1" max="500">
+        </label>
+        <div style="margin-top:18px;">
+          <button id="btn-analyze" class="secondary">📊 分析</button>
+          <button id="btn-dry">👀 ドライラン</button>
+          <button id="btn-apply" class="danger">✅ 本番適用</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="result" class="card" style="display:none;">
+      <h2>結果</h2>
+      <div id="result-summary"></div>
+      <div id="result-table"></div>
+    </div>
+  </div>
+
+  <!-- ===== ルールタブ ===== -->
+  <div class="panel" data-panel="rules">
+    <div class="card">
+      <h2>ルール (JSON)</h2>
+      <p class="small muted">
+        上から順に評価し、最初にマッチしたルールが適用されます。<br>
+        <code>match.from</code> / <code>match.subject</code> は正規表現 (大小区別なし)。
+        <code>match.hasListUnsubscribe: true</code> でメルマガに限定。
+      </p>
+      <textarea id="rules-text" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-rules-save">💾 保存</button>
+        <button id="btn-rules-reset" class="secondary">↺ デフォルトに戻す</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Unsubscribe タブ ===== -->
+  <div class="panel" data-panel="unsub">
+    <div class="card">
+      <h2>メルマガ解除リンク</h2>
+      <p class="small muted">
+        実行タブで「分析」または「ドライラン」を実行すると、ここに検出された解除リンクが
+        送信者ごとに集約されます。リンクをクリックして順次解除してください。
+      </p>
+      <div id="unsub-list">まだデータがありません。実行タブから「ドライラン」を実行してください。</div>
+    </div>
+  </div>
+
+  <!-- ===== 設定タブ ===== -->
+  <div class="panel" data-panel="settings">
+    <div class="card">
+      <h2>基本設定</h2>
+      <div class="grid2">
+        <div>
+          <label class="form">デフォルトクエリ</label>
+          <input id="set-query" type="text">
+          <label class="form">最大件数</label>
+          <input id="set-max" type="number" min="1" max="500">
+        </div>
+        <div>
+          <label class="form">未分類メールに付けるラベル</label>
+          <input id="set-review-label" type="text">
+          <label class="form">不要メールに付けるラベル</label>
+          <input id="set-unwanted-label" type="text">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🤖 Gemini による LLM 分類 (任意)</h2>
+      <p class="small muted">
+        ルールにマッチしなかったメールを Gemini で 必要 / 通知 / 不要 に判定します。<br>
+        API キーは <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> で無料発行。
+      </p>
+      <label class="row" style="gap:6px;">
+        <input id="set-use-gemini" type="checkbox"> Gemini を有効にする
+      </label>
+      <label class="form">Gemini API Key</label>
+      <input id="set-gemini-key" type="password" placeholder="AIza...">
+      <label class="form">モデル</label>
+      <select id="set-gemini-model">
+        <option value="gemini-2.5-flash">gemini-2.5-flash (推奨・無料枠あり)</option>
+        <option value="gemini-2.5-pro">gemini-2.5-pro (高精度)</option>
+      </select>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-gemini-test" class="secondary">🔍 テスト</button>
+        <span id="gemini-test-result" class="small muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⏰ 自動実行</h2>
+      <p class="small muted">
+        1 時間ごとに <code>newer_than:2h</code> で受信トレイを自動仕分けします。
+      </p>
+      <div class="row">
+        <button id="btn-trigger-install">⏰ 自動実行を有効化</button>
+        <button id="btn-trigger-uninstall" class="secondary">停止</button>
+        <span id="trigger-detail" class="small muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <button id="btn-settings-save">💾 設定を保存</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+  // ----- タブ切替 -----
+  document.querySelectorAll('.tab').forEach(function(t) {
+    t.addEventListener('click', function() {
+      document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function(x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      document.querySelector('[data-panel="' + t.dataset.tab + '"]').classList.add('active');
+    });
+  });
+
+  function toast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(function() { el.classList.remove('show'); }, 2400);
+  }
+
+  function busy(btn, busy) {
+    if (busy) { btn.dataset.label = btn.textContent; btn.textContent = '...'; btn.disabled = true; }
+    else { btn.textContent = btn.dataset.label; btn.disabled = false; }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+
+  // ----- 設定読み込み -----
+  function loadSettingsToForm() {
+    google.script.run.withSuccessHandler(function(s) {
+      document.getElementById('set-query').value = s.query || '';
+      document.getElementById('set-max').value = s.maxMessages || 200;
+      document.getElementById('set-review-label').value = s.reviewLabel || 'Org/Review';
+      document.getElementById('set-unwanted-label').value = s.unwantedLabel || 'Org/Unwanted';
+      document.getElementById('set-use-gemini').checked = !!s.useGemini;
+      document.getElementById('set-gemini-key').value = s.geminiApiKey || '';
+      document.getElementById('set-gemini-model').value = s.geminiModel || 'gemini-2.5-flash';
+      document.getElementById('run-query').value = s.query || '';
+      document.getElementById('run-max').value = s.maxMessages || 200;
+    }).uiGetSettings();
+  }
+
+  function loadRulesToForm() {
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('rules-text').value = JSON.stringify(r, null, 2);
+    }).uiGetRules();
+  }
+
+  function refreshTriggerStatus() {
+    google.script.run.withSuccessHandler(function(r) {
+      var el = document.getElementById('trigger-status');
+      var detail = document.getElementById('trigger-detail');
+      if (r.installed) {
+        el.textContent = '⏰ 自動実行: ON';
+        el.className = 'pill ok';
+        if (detail) detail.textContent = '毎時自動実行されます';
+      } else {
+        el.textContent = '⏰ 自動実行: OFF';
+        el.className = 'pill';
+        if (detail) detail.textContent = '現在は手動実行のみ';
+      }
+    }).uiGetTriggerStatus();
+  }
+
+  // ----- 実行 -----
+  function renderResult(r) {
+    document.getElementById('result').style.display = 'block';
+    var counts = r.counts || {};
+    var keys = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; });
+    var summary = '<p>対象 <b>' + r.total + '</b> 件 / クエリ <code>' + escapeHtml(r.query) + '</code> '
+      + (r.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill ok">適用済</span>') + '</p>';
+    summary += '<table><tr><th>ルール</th><th>件数</th></tr>';
+    keys.forEach(function(k) { summary += '<tr><td>' + escapeHtml(k) + '</td><td>' + counts[k] + '</td></tr>'; });
+    summary += '</table>';
+    document.getElementById('result-summary').innerHTML = summary;
+
+    var rows = (r.previews || []).map(function(p) {
+      var g = p.gemini ? '<span class="pill">🤖 Gemini</span> ' : '';
+      return '<tr>'
+        + '<td class="truncate">' + escapeHtml(p.from) + '</td>'
+        + '<td class="truncate">' + escapeHtml(p.subject) + '</td>'
+        + '<td>' + g + escapeHtml(p.rule) + '</td>'
+        + '<td class="small muted">' + escapeHtml(p.action) + '</td>'
+        + '</tr>';
+    }).join('');
+    document.getElementById('result-table').innerHTML =
+      '<table><tr><th>From</th><th>Subject</th><th>適用ルール</th><th>動作</th></tr>' + rows + '</table>';
+
+    renderUnsub(r.unsubscribe || []);
+  }
+
+  function renderUnsub(list) {
+    if (!list.length) {
+      document.getElementById('unsub-list').textContent = 'List-Unsubscribe ヘッダ付きメールは見つかりませんでした。';
+      return;
+    }
+    var html = '<p class="small muted">' + list.length + ' 送信者見つかりました。'
+      + 'mailto: は送信するだけで解除完了することが多いです。</p>';
+    html += list.map(function(e) {
+      var urls = e.urls.map(function(u) { return '<li><a href="' + escapeHtml(u) + '" target="_blank">' + escapeHtml(u) + '</a></li>'; }).join('');
+      var mailtos = e.mailtos.map(function(m) { return '<li><a href="' + escapeHtml(m) + '">' + escapeHtml(m) + '</a></li>'; }).join('');
+      var subjects = e.subjects.map(function(s) { return '<li class="muted small">' + escapeHtml(s) + '</li>'; }).join('');
+      return '<div class="card" style="margin-top:8px;">'
+        + '<b>' + escapeHtml(e.sender) + '</b> '
+        + (e.oneClick ? '<span class="pill ok">one-click</span>' : '')
+        + '<ul>' + urls + mailtos + '</ul>'
+        + (subjects ? '<details><summary>直近の件名 ' + e.subjects.length + ' 件</summary><ul>' + subjects + '</ul></details>' : '')
+        + '</div>';
+    }).join('');
+    document.getElementById('unsub-list').innerHTML = html;
+  }
+
+  function renderStats(s) {
+    document.getElementById('result').style.display = 'block';
+    var rows = function(arr) {
+      return arr.map(function(x) {
+        var p = x.isPromo ? ' 📨' : '';
+        return '<tr><td>' + x.count + '</td><td>' + escapeHtml(x.key) + p + '</td></tr>';
+      }).join('');
+    };
+    document.getElementById('result-summary').innerHTML =
+      '<p>対象 ' + s.total + ' 件 / 送信者 ' + s.uniqueSenders + ' / メルマガ系送信者 ' + s.promoSenders + '</p>';
+    document.getElementById('result-table').innerHTML =
+      '<div class="grid2">'
+      + '<div><h2>送信者 TOP20</h2><table><tr><th>件数</th><th>From</th></tr>' + rows(s.topSenders) + '</table></div>'
+      + '<div><h2>メルマガ送信者 TOP20</h2><table><tr><th>件数</th><th>From</th></tr>' + rows(s.topPromo) + '</table></div>'
+      + '</div>';
+  }
+
+  document.getElementById('btn-analyze').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    var q = document.getElementById('run-query').value;
+    var max = parseInt(document.getElementById('run-max').value, 10);
+    google.script.run
+      .withSuccessHandler(function(s) { renderStats(s); busy(btn, false); toast('分析完了'); })
+      .withFailureHandler(function(e) { busy(btn, false); toast('エラー: ' + e.message); })
+      .uiAnalyze({ query: q, max: max });
+  });
+
+  function runMode(dryRun, btn) {
+    if (!dryRun && !confirm('本番適用します。よろしいですか?')) return;
+    busy(btn, true);
+    var q = document.getElementById('run-query').value;
+    var max = parseInt(document.getElementById('run-max').value, 10);
+    google.script.run
+      .withSuccessHandler(function(r) { renderResult(r); busy(btn, false); toast(dryRun ? 'ドライラン完了' : '適用完了'); })
+      .withFailureHandler(function(e) { busy(btn, false); toast('エラー: ' + e.message); })
+      .uiRun({ query: q, max: max, dryRun: dryRun });
+  }
+  document.getElementById('btn-dry').addEventListener('click', function() { runMode(true, this); });
+  document.getElementById('btn-apply').addEventListener('click', function() { runMode(false, this); });
+
+  // ----- ルール -----
+  document.getElementById('btn-rules-save').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    try {
+      var parsed = JSON.parse(document.getElementById('rules-text').value);
+      google.script.run
+        .withSuccessHandler(function() { busy(btn, false); toast('ルールを保存しました'); })
+        .withFailureHandler(function(e) { busy(btn, false); toast('保存失敗: ' + e.message); })
+        .uiSaveRules(parsed);
+    } catch (e) {
+      busy(btn, false);
+      toast('JSON エラー: ' + e.message);
+    }
+  });
+  document.getElementById('btn-rules-reset').addEventListener('click', function() {
+    if (!confirm('デフォルトに戻しますか?')) return;
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('rules-text').value = JSON.stringify(r, null, 2);
+      toast('リセットしました');
+    }).uiResetRules();
+  });
+
+  // ----- 設定 -----
+  document.getElementById('btn-settings-save').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    var s = {
+      query: document.getElementById('set-query').value,
+      maxMessages: parseInt(document.getElementById('set-max').value, 10),
+      reviewLabel: document.getElementById('set-review-label').value,
+      unwantedLabel: document.getElementById('set-unwanted-label').value,
+      useGemini: document.getElementById('set-use-gemini').checked,
+      geminiApiKey: document.getElementById('set-gemini-key').value,
+      geminiModel: document.getElementById('set-gemini-model').value,
+    };
+    google.script.run
+      .withSuccessHandler(function() { busy(btn, false); toast('保存しました'); loadSettingsToForm(); })
+      .withFailureHandler(function(e) { busy(btn, false); toast('保存失敗: ' + e.message); })
+      .uiSaveSettings(s);
+  });
+
+  document.getElementById('btn-gemini-test').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    document.getElementById('gemini-test-result').textContent = '';
+    google.script.run
+      .withSuccessHandler(function(r) {
+        busy(btn, false);
+        if (!r) { document.getElementById('gemini-test-result').textContent = '失敗 (API キー未設定 or レート制限)'; return; }
+        document.getElementById('gemini-test-result').textContent = '✓ ' + r.category + ' — ' + (r.reason || '');
+      })
+      .withFailureHandler(function(e) { busy(btn, false); document.getElementById('gemini-test-result').textContent = 'エラー: ' + e.message; })
+      .uiTestGemini('newsletter@shop.example', '【春のセール】最大50%OFF');
+  });
+
+  document.getElementById('btn-trigger-install').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    google.script.run.withSuccessHandler(function() { busy(btn, false); toast('自動実行を有効化しました'); refreshTriggerStatus(); }).uiInstallTrigger();
+  });
+  document.getElementById('btn-trigger-uninstall').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    google.script.run.withSuccessHandler(function() { busy(btn, false); toast('自動実行を停止しました'); refreshTriggerStatus(); }).uiUninstallTrigger();
+  });
+
+  // ----- 初期ロード -----
+  loadSettingsToForm();
+  loadRulesToForm();
+  refreshTriggerStatus();
+</script>
+</body>
+</html>

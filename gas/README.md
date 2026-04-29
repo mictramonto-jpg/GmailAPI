@@ -6,8 +6,10 @@
 
 - 📊 受信トレイ分析 (送信者・ドメイン・メルマガ送信者の TOP20)
 - 📋 ルールベース仕分け (JSON でルール編集、ラベル付与・アーカイブ・既読化)
-- 🤖 **Gemini API による LLM 分類** (ルールに当てはまらないメールを「必要・通知・不要」に判定)
-- 🔕 メルマガ解除リンクを送信者ごとに集約 (one-click 表示・mailto 対応)
+- ⭐ **ホワイトリスト** (重要送信者は絶対に仕分け対象外)
+- 🤖 **LLM 分類** (Gemini / Claude 切替可。「必要・通知・不要」を判定)
+- 💾 **LLM 結果キャッシュ** (同じ送信者の再分類を 30 日間スキップしてコスト削減)
+- 🔕 メルマガ解除リンクを送信者ごとに集約 + **一括タブオープン**
 - ⏰ 1 時間ごとに自動実行 (PC を起動していなくても OK)
 - 📱 Web UI でスマホからもルール編集・実行可能
 
@@ -20,13 +22,64 @@
 | `appsscript.json` | マニフェスト (Gmail Advanced Service + スコープ) |
 | `Code.gs` | UI ラッパー + 自動実行トリガ管理 |
 | `Rules.gs` | デフォルトルール + 設定永続化 |
-| `Classifier.gs` | ヘッダ解析 + ルール照合 + LLM フォールバック |
+| `Classifier.gs` | ヘッダ解析 + ルール照合 + LLM フォールバック + ホワイトリスト |
+| `Cache.gs` | LLM 結果の送信者単位キャッシュ (コスト削減) |
 | `Gemini.gs` | Gemini API クライアント |
 | `Claude.gs` | Claude API クライアント (Anthropic) |
 | `Web.gs` | `doGet` Web エントリ |
-| `ui/Index.html` | タブ式ダッシュボード |
+| `ui/Index.html` | タブ式ダッシュボード (実行/ルール/ホワイトリスト/解除/設定) |
 
-## デプロイ手順 (約 5 分)
+## デプロイ方法は 2 通り
+
+- **A. clasp (推奨・コピペ不要・ワンコマンド)** — Node.js が必要
+- **B. ブラウザでコピペ** — Node.js なしで動くが手作業が多い
+
+ご自分の環境に合わせてどちらかを選んでください。
+
+---
+
+## A. clasp デプロイ (推奨)
+
+### A-1. Node.js を入れる
+
+<https://nodejs.org/> から **LTS 版** をインストール (Windows: インストーラ通常実行で OK)。
+
+PowerShell で確認:
+```powershell
+node --version
+npm --version
+```
+
+### A-2. clasp をインストール & ログイン
+
+リポジトリ直下で:
+
+```powershell
+cd $HOME\GmailAPI
+npm install
+npm run login
+```
+
+ブラウザが開いて Google ログイン → 「Apps Script API は有効ですか?」と出たら
+<https://script.google.com/home/usersettings> で **「Apps Script API: ON」** にしてリトライ。
+
+### A-3. プロジェクトを作成 → push → デプロイ
+
+```powershell
+npm run create     # 初回のみ: GAS プロジェクトを作成
+npm run push       # gas/ の中身を全部 push
+npm run deploy     # Web アプリとしてデプロイ
+```
+
+完了すると **Web アプリ URL** が表示されます。コピーしてブラウザで開けばダッシュボード完成。
+
+> 以降コードを変更したら `npm run push` だけで反映できます。
+
+---
+
+## B. ブラウザでコピペ (Node.js なしの場合)
+
+### Step 1: Apps Script プロジェクトを作る
 
 ### Step 1: Apps Script プロジェクトを作る
 
@@ -50,6 +103,7 @@ GAS エディタは初期状態で `Code.gs` が 1 つあります。これを�
 |---|---|
 | `Rules` | `gas/Rules.gs` |
 | `Classifier` | `gas/Classifier.gs` |
+| `Cache` | `gas/Cache.gs` |
 | `Gemini` | `gas/Gemini.gs` |
 | `Claude` | `gas/Claude.gs` |
 | `Web` | `gas/Web.gs` |

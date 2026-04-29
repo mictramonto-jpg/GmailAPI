@@ -68,6 +68,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="run">▶️ 実行</div>
     <div class="tab" data-tab="rules">📋 ルール</div>
+    <div class="tab" data-tab="whitelist">⭐ ホワイトリスト</div>
     <div class="tab" data-tab="unsub">🔕 解除リンク</div>
     <div class="tab" data-tab="settings">⚙️ 設定</div>
   </div>
@@ -116,6 +117,28 @@
     </div>
   </div>
 
+  <!-- ===== Whitelist タブ ===== -->
+  <div class="panel" data-panel="whitelist">
+    <div class="card">
+      <h2>⭐ ホワイトリスト (重要送信者)</h2>
+      <p class="small muted">
+        ここに登録された送信者からのメールは <b>仕分けの対象外</b> (アーカイブも既読化もされず受信トレイに残る)。<br>
+        家族・上司・取引先など「絶対に見逃したくない」相手を登録。
+      </p>
+      <p class="small muted">
+        書式 (1 行 1 つ):
+        <code>foo@bar.com</code> (完全一致) /
+        <code>@bar.com</code> (ドメイン全体) /
+        <code>/^boss.*@company\.co\.jp$/i</code> (正規表現) /
+        <code># 行頭に # でコメント</code>
+      </p>
+      <textarea id="whitelist-text" spellcheck="false" placeholder="@yourcompany.co.jp&#10;family@example.com&#10;# クライアント&#10;@important-client.jp"></textarea>
+      <div class="row" style="margin-top:8px;">
+        <button id="btn-whitelist-save">💾 保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Unsubscribe タブ ===== -->
   <div class="panel" data-panel="unsub">
     <div class="card">
@@ -124,6 +147,10 @@
         実行タブで「分析」または「ドライラン」を実行すると、ここに検出された解除リンクが
         送信者ごとに集約されます。リンクをクリックして順次解除してください。
       </p>
+      <div class="row" style="margin-bottom:8px;">
+        <button id="btn-unsub-open-all" class="secondary">🌐 全 URL をタブで開く</button>
+        <span class="small muted">※ ブラウザのポップアップブロックを許可してください</span>
+      </div>
       <div id="unsub-list">まだデータがありません。実行タブから「ドライラン」を実行してください。</div>
     </div>
   </div>
@@ -193,6 +220,19 @@
           <button id="btn-claude-test" class="secondary">🔍 テスト</button>
           <span id="claude-test-result" class="small muted"></span>
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>💾 LLM 結果キャッシュ</h2>
+      <p class="small muted">
+        同じ送信者からのメールを再分類しないようキャッシュしています (30 日間)。
+        API コスト削減のため有効ですが、判定基準を変えたいときはクリアしてください。
+      </p>
+      <div class="row">
+        <button id="btn-cache-stats" class="secondary">📊 統計</button>
+        <button id="btn-cache-clear" class="danger">🗑 全クリア</button>
+        <span id="cache-stats-result" class="small muted"></span>
       </div>
     </div>
 
@@ -277,6 +317,12 @@
     }).uiGetRules();
   }
 
+  function loadWhitelistToForm() {
+    google.script.run.withSuccessHandler(function(s) {
+      document.getElementById('whitelist-text').value = s.whitelist || '';
+    }).uiGetSettings();
+  }
+
   function refreshTriggerStatus() {
     google.script.run.withSuccessHandler(function(r) {
       var el = document.getElementById('trigger-status');
@@ -321,6 +367,7 @@
   }
 
   function renderUnsub(list) {
+    __lastUnsub = list || [];
     if (!list.length) {
       document.getElementById('unsub-list').textContent = 'List-Unsubscribe ヘッダ付きメールは見つかりませんでした。';
       return;
@@ -403,6 +450,55 @@
     }).uiResetRules();
   });
 
+  // ----- ホワイトリスト -----
+  document.getElementById('btn-whitelist-save').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    google.script.run.withSuccessHandler(function(s) {
+      // 現在の他設定とマージしてから保存
+      var merged = Object.assign({}, s, { whitelist: document.getElementById('whitelist-text').value });
+      google.script.run
+        .withSuccessHandler(function() { busy(btn, false); toast('ホワイトリストを保存しました'); })
+        .withFailureHandler(function(e) { busy(btn, false); toast('保存失敗: ' + e.message); })
+        .uiSaveSettings(merged);
+    }).uiGetSettings();
+  });
+
+  // ----- バルク Unsubscribe -----
+  var __lastUnsub = [];
+  document.getElementById('btn-unsub-open-all').addEventListener('click', function() {
+    if (!__lastUnsub.length) { toast('解除リンクがまだ取得できていません'); return; }
+    var urls = [];
+    __lastUnsub.forEach(function(e) { e.urls.forEach(function(u) { urls.push(u); }); });
+    if (!urls.length) { toast('http(s) 形式の解除リンクがありません'); return; }
+    if (!confirm(urls.length + ' 件のタブを開きます。続行しますか?')) return;
+    urls.forEach(function(u, i) {
+      // 連続で開くとブロックされやすいので少しずつ間隔をあける
+      setTimeout(function() { window.open(u, '_blank'); }, i * 250);
+    });
+  });
+
+  // ----- LLM キャッシュ管理 -----
+  document.getElementById('btn-cache-stats').addEventListener('click', function() {
+    var btn = this; busy(btn, true);
+    google.script.run.withSuccessHandler(function(s) {
+      busy(btn, false);
+      var parts = ['キャッシュ件数: ' + s.total];
+      Object.keys(s.byProvider || {}).forEach(function(k) {
+        parts.push(k + '=' + s.byProvider[k]);
+      });
+      document.getElementById('cache-stats-result').textContent = parts.join(' / ');
+    }).uiCacheStats();
+  });
+  document.getElementById('btn-cache-clear').addEventListener('click', function() {
+    if (!confirm('LLM キャッシュを全クリアします。次回実行時は再分類されます。よろしいですか?')) return;
+    var btn = this; busy(btn, true);
+    google.script.run.withSuccessHandler(function() {
+      busy(btn, false);
+      document.getElementById('cache-stats-result').textContent = 'クリアしました';
+      toast('キャッシュをクリアしました');
+    }).uiClearCache();
+  });
+
   // ----- 設定 -----
   document.getElementById('btn-settings-save').addEventListener('click', function() {
     var btn = this; busy(btn, true);
@@ -461,6 +557,7 @@
   // ----- 初期ロード -----
   loadSettingsToForm();
   loadRulesToForm();
+  loadWhitelistToForm();
   refreshTriggerStatus();
 </script>
 </body>

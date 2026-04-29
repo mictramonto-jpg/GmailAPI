@@ -42,6 +42,14 @@ function uiTestClaude(from, subject) {
   return testClaude(from, subject);
 }
 
+function uiCacheStats() {
+  return getLlmCacheStats();
+}
+
+function uiClearCache() {
+  return clearLlmCache();
+}
+
 // ----- 自動実行 (時間トリガ) -----
 
 const HOURLY_TRIGGER_FN = 'hourlyOrganize';

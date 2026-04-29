@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
   claudeModel: 'claude-opus-4-7',  // Anthropic 推奨デフォルト。コスト重視なら claude-haiku-4-5
   unwantedLabel: 'Org/Unwanted',
   reviewLabel: 'Org/Review',
+  whitelist: '',  // 改行区切り。foo@bar.com / @bar.com / /regex/i のいずれか
 };
 
 function loadRules() {

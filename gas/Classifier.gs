@@ -44,6 +44,41 @@ function senderDomain(addr) {
 }
 
 /**
+ * settings.whitelist (改行区切り) の各行を、送信者のメアドまたはドメインと一致するか確認。
+ * - 完全一致 (foo@bar.com)
+ * - ドメイン一致 (@bar.com or bar.com)
+ * - 正規表現 (/^foo.*@bar\.com$/i のように / で囲む)
+ */
+function isWhitelisted(senderAddr, settings) {
+  const text = (settings && settings.whitelist) || '';
+  if (!text || !senderAddr) return false;
+  const lower = senderAddr.toLowerCase();
+  const dom = senderDomain(lower);
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.charAt(0) === '#') continue;
+    if (line.charAt(0) === '/' && line.lastIndexOf('/') > 0) {
+      // /pattern/flags
+      const last = line.lastIndexOf('/');
+      const pattern = line.slice(1, last);
+      const flags = line.slice(last + 1) || 'i';
+      try {
+        if (new RegExp(pattern, flags).test(lower)) return true;
+      } catch (e) { /* invalid regex, skip */ }
+      continue;
+    }
+    const norm = line.toLowerCase().replace(/^@/, '');
+    if (norm.indexOf('@') >= 0) {
+      if (norm === lower) return true;
+    } else {
+      if (norm === dom) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 1 件のメッセージ (Gmail API のリソース) をルールに照らして判定する。
  * @return {{rule: object|null, headers: object}}
  */
@@ -110,17 +145,38 @@ function runClassification(opts) {
     let rule = result.rule;
     const ctx = result.ctx;
 
+    // ホワイトリスト判定 (最優先・LLM もルールも適用しない)
+    const senderAddr = normalizeSender(ctx.from);
+    if (isWhitelisted(senderAddr, settings)) {
+      counts['Whitelist (skipped)'] = (counts['Whitelist (skipped)'] || 0) + 1;
+      if (previews.length < 100) {
+        previews.push({
+          id: id, from: ctx.from, subject: ctx.subject,
+          rule: 'Whitelist', action: '(no-op)', llm: false, provider: '',
+        });
+      }
+      continue;
+    }
+
     // LLM フォールバック (ルールにマッチしなかった & プロバイダ有効)
     let llmUsed = false;
     let llmProviderUsed = '';
+    let llmCacheHit = false;
     if (!rule && useLLM) {
       try {
-        const decision = (provider === 'claude')
-          ? classifyWithClaude(ctx, settings)
-          : classifyWithGemini(ctx, settings);
+        const model = (provider === 'claude') ? settings.claudeModel : settings.geminiModel;
+        let decision = getCachedDecision(provider, model, senderAddr);
+        if (decision) {
+          llmCacheHit = true;
+        } else {
+          decision = (provider === 'claude')
+            ? classifyWithClaude(ctx, settings)
+            : classifyWithGemini(ctx, settings);
+          if (decision) putCachedDecision(provider, model, senderAddr, decision);
+        }
         if (decision && decision.label) {
           rule = {
-            name: provider + ': ' + decision.category,
+            name: provider + ': ' + decision.category + (llmCacheHit ? ' (cached)' : ''),
             action: {
               label: decision.label,
               archive: !!decision.archive,
@@ -128,7 +184,7 @@ function runClassification(opts) {
             },
           };
           llmUsed = true;
-          llmProviderUsed = provider;
+          llmProviderUsed = provider + (llmCacheHit ? '*' : '');
         }
       } catch (e) {
         // 失敗時は default に流す

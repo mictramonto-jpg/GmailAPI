@@ -19,3 +19,8 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Node / clasp
+node_modules/
+gas/.clasp.json
+.clasprc.json

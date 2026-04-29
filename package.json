@@ -1,0 +1,17 @@
+{
+  "name": "gmail-organizer",
+  "version": "1.0.0",
+  "description": "Gmail Organizer (GAS web app)",
+  "private": true,
+  "scripts": {
+    "login": "clasp login",
+    "create": "cd gas && clasp create --type webapp --title \"Gmail Organizer\"",
+    "push": "cd gas && clasp push -f",
+    "open": "cd gas && clasp open --webapp",
+    "deploy": "cd gas && clasp deploy",
+    "logs": "cd gas && clasp logs"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}

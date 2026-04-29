@@ -4,12 +4,13 @@ Gmail を自動仕分けする 2 つの実装が含まれます。
 
 ## 🌟 推奨: Google Apps Script Web App 版 (`gas/`)
 
-**ブラウザだけで完結 / インストール不要 / クラウド常駐 / Gemini LLM 分類対応**
+**ブラウザだけで完結 / インストール不要 / クラウド常駐 / Gemini & Claude LLM 分類対応**
 
-- 📊 受信トレイ分析 + 📋 ルールベース仕分け + 🤖 LLM フォールバック
+- 📊 受信トレイ分析 + 📋 ルールベース仕分け + 🤖 LLM フォールバック (Gemini / Claude 切替可)
 - 🔕 メルマガ解除リンクを送信者ごとに集約 (one-click 表示)
 - ⏰ 1 時間ごとに自動実行 (PC オフでも OK)
 - 📱 Web UI でスマホからも操作可能
+- 💰 Gemini Flash で個人利用なら **完全無料** / Claude Haiku 4.5 でも月 ~$1.20
 
 → **デプロイ手順**: [`gas/README.md`](./gas/README.md)
 

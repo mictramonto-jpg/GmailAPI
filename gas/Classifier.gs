@@ -84,7 +84,9 @@ function runClassification(opts) {
   const query = opts.query || settings.query;
   const max = Math.min(parseInt(opts.max || settings.maxMessages, 10) || 200, 500);
   const dryRun = !!opts.dryRun;
-  const useGemini = settings.useGemini && !!settings.geminiApiKey;
+  const provider = settings.llmProvider || 'none';
+  const useLLM = (provider === 'gemini' && !!settings.geminiApiKey)
+              || (provider === 'claude' && !!settings.claudeApiKey);
 
   const list = Gmail.Users.Messages.list('me', { q: query, maxResults: max });
   const messages = list.messages || [];
@@ -108,21 +110,25 @@ function runClassification(opts) {
     let rule = result.rule;
     const ctx = result.ctx;
 
-    // Gemini フォールバック (ルールにマッチしなかった & Gemini 有効)
-    let geminiUsed = false;
-    if (!rule && useGemini) {
+    // LLM フォールバック (ルールにマッチしなかった & プロバイダ有効)
+    let llmUsed = false;
+    let llmProviderUsed = '';
+    if (!rule && useLLM) {
       try {
-        const decision = classifyWithGemini(ctx, settings);
+        const decision = (provider === 'claude')
+          ? classifyWithClaude(ctx, settings)
+          : classifyWithGemini(ctx, settings);
         if (decision && decision.label) {
           rule = {
-            name: 'Gemini: ' + decision.category,
+            name: provider + ': ' + decision.category,
             action: {
               label: decision.label,
               archive: !!decision.archive,
               markRead: !!decision.markRead,
             },
           };
-          geminiUsed = true;
+          llmUsed = true;
+          llmProviderUsed = provider;
         }
       } catch (e) {
         // 失敗時は default に流す
@@ -149,7 +155,8 @@ function runClassification(opts) {
         subject: ctx.subject,
         rule: rule.name,
         action: summary,
-        gemini: geminiUsed,
+        llm: llmUsed,
+        provider: llmProviderUsed,
       });
     }
 

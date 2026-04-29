@@ -13,6 +13,19 @@
 
 ---
 
+## ファイル構成
+
+| ファイル | 役割 |
+|---|---|
+| `appsscript.json` | マニフェスト (Gmail Advanced Service + スコープ) |
+| `Code.gs` | UI ラッパー + 自動実行トリガ管理 |
+| `Rules.gs` | デフォルトルール + 設定永続化 |
+| `Classifier.gs` | ヘッダ解析 + ルール照合 + LLM フォールバック |
+| `Gemini.gs` | Gemini API クライアント |
+| `Claude.gs` | Claude API クライアント (Anthropic) |
+| `Web.gs` | `doGet` Web エントリ |
+| `ui/Index.html` | タブ式ダッシュボード |
+
 ## デプロイ手順 (約 5 分)
 
 ### Step 1: Apps Script プロジェクトを作る
@@ -38,6 +51,7 @@ GAS エディタは初期状態で `Code.gs` が 1 つあります。これを�
 | `Rules` | `gas/Rules.gs` |
 | `Classifier` | `gas/Classifier.gs` |
 | `Gemini` | `gas/Gemini.gs` |
+| `Claude` | `gas/Claude.gs` |
 | `Web` | `gas/Web.gs` |
 
 #### 2-3. HTML ファイルを追加
@@ -109,16 +123,78 @@ GAS エディタは初期状態で `Code.gs` が 1 つあります。これを�
 
 ---
 
-## Gemini API キーの取得 (任意)
+## LLM プロバイダの取得 (任意)
 
-LLM 分類を使う場合のみ。
+LLM 分類を使う場合のみ。設定タブのプロバイダで「Gemini」または「Claude」を選択。
+
+### Gemini (Google・無料枠あり)
 
 1. <https://aistudio.google.com/app/apikey> にアクセス
-2. 「+ Create API key」 → API キーが発行される
-3. それをコピーして「⚙️ 設定」 → 「Gemini API Key」に貼り付け
+2. 「+ Create API key」 → API キーが発行される (`AIza...`)
+3. 「⚙️ 設定」 → プロバイダ「Gemini」 → API Key に貼り付け
 4. 「💾 設定を保存」 → 「🔍 テスト」で動作確認
 
-無料枠で 1 日 1000 リクエスト程度可能 (個人 Gmail には十分)。
+**無料枠**: `gemini-2.5-flash` で 1 日 1500 リクエスト程度。個人 Gmail なら無料に収まる。
+
+### Claude (Anthropic・高精度)
+
+1. <https://console.anthropic.com/> にアクセス → アカウント作成
+2. 課金設定で **$5 以上**チャージ (クレカ登録要)
+3. <https://console.anthropic.com/settings/keys> で 「Create Key」 → `sk-ant-...` を発行
+4. 「⚙️ 設定」 → プロバイダ「Claude」 → API Key に貼り付け
+5. モデル選択:
+   - **`claude-opus-4-7`** (最高精度・$5 / $25 per 1M tokens) — 既定
+   - **`claude-sonnet-4-6`** (中間・$3 / $15)
+   - **`claude-haiku-4-5`** (最安・$1 / $5・分類タスクには十分)
+6. 「💾 設定を保存」 → 「🔍 テスト」で動作確認
+
+> ⚠️ Claude API は無料枠なし。コスト試算は次セクション参照。
+
+---
+
+## トークン使用量とコスト目安
+
+LLM 分類は **ルールにマッチしなかったメール** にだけ呼ばれます。
+ルールで処理されたメールには 1 トークンも使いません。
+
+### 1 通あたりの想定トークン
+
+| 内訳 | トークン |
+|---|---|
+| 入力 (system + From + Subject + List-Unsubscribe フラグ) | ~250 |
+| 出力 (JSON: `{category, reason}`) | ~30 |
+| **合計** | **~280** |
+
+### 月額シミュレーション
+
+毎日 **100 通の未マッチメール** が LLM に流れる前提 (一般的な個人利用):
+
+| プロバイダ・モデル | 入力単価 | 出力単価 | 1 通 | 1 日 | **1 ヶ月** |
+|---|---|---|---|---|---|
+| **Gemini 2.5 Flash** | 無料枠内 | 無料枠内 | 0 円 | 0 円 | **0 円** (※) |
+| **Claude Haiku 4.5** | $1.00 / 1M | $5.00 / 1M | $0.0004 | $0.04 | **約 $1.20 (180円)** |
+| **Claude Sonnet 4.6** | $3.00 / 1M | $15.00 / 1M | $0.0012 | $0.12 | **約 $3.60 (540円)** |
+| **Claude Opus 4.7** | $5.00 / 1M | $25.00 / 1M | $0.0020 | $0.20 | **約 $6.00 (900円)** |
+
+(※) Gemini Flash は 1 日 1500 リクエストまで無料。100 通なら大幅に余裕あり。
+
+毎日 **1000 通** を LLM 分類する重い使い方の場合:
+
+| プロバイダ・モデル | **1 ヶ月** |
+|---|---|
+| Gemini 2.5 Flash | 約 $0.84 (130円) ※無料枠 1500/日を超えた分の課金 |
+| Claude Haiku 4.5 | 約 $12 (1,800円) |
+| Claude Sonnet 4.6 | 約 $36 (5,400円) |
+| Claude Opus 4.7 | 約 $60 (9,000円) |
+
+### コスト最適化のヒント
+
+1. **ルールを充実させる** — メルマガなど典型的なメールはルールで処理し、LLM は本当に判別困難なメールだけに使う
+2. **クエリを絞る** — `newer_than:7d` より `newer_than:1h`、自動実行は短い間隔で少量ずつ
+3. **モデル選択** — 件名+送信者だけの 2 値分類なら **Haiku 4.5 で十分**。Opus は判別が難しいメールが多い場合
+4. **Gemini Flash 推奨** — まずは無料の Gemini で運用、限界を感じたら Claude へ
+
+---
 
 ---
 

@@ -38,6 +38,10 @@ function uiTestGemini(from, subject) {
   return testGemini(from, subject);
 }
 
+function uiTestClaude(from, subject) {
+  return testClaude(from, subject);
+}
+
 // ----- 自動実行 (時間トリガ) -----
 
 const HOURLY_TRIGGER_FN = 'hourlyOrganize';

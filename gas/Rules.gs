@@ -37,9 +37,11 @@ const DEFAULT_RULES = {
 const DEFAULT_SETTINGS = {
   query: 'in:inbox newer_than:7d',
   maxMessages: 200,
-  useGemini: false,
+  llmProvider: 'none',           // 'none' | 'gemini' | 'claude'
   geminiApiKey: '',
   geminiModel: 'gemini-2.5-flash',
+  claudeApiKey: '',
+  claudeModel: 'claude-opus-4-7',  // Anthropic 推奨デフォルト。コスト重視なら claude-haiku-4-5
   unwantedLabel: 'Org/Unwanted',
   reviewLabel: 'Org/Review',
 };

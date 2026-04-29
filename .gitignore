@@ -1,0 +1,21 @@
+# Credentials & tokens (絶対にコミットしない)
+credentials.json
+token.json
+client_secret*.json
+*.pem
+
+# 個人ルール (example のみコミット)
+rules.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/

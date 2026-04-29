@@ -1,0 +1,63 @@
+# Gmail 整理ルール定義
+#
+# 上から順に評価し、最初にマッチしたルールが適用される。
+# どれにもマッチしないメールは `default_label` (任意) に分類される。
+#
+# match の各フィールドは OR ではなく AND (全て満たすメールにマッチ)。
+# from / subject / body はいずれも正規表現 (大小区別なし)。
+# has_list_unsubscribe: true で List-Unsubscribe ヘッダ持ち (≒ 一斉配信) のみ。
+#
+# action:
+#   label:    付与する Gmail ラベル名 (ネスト用 "/" 区切り可。なければ自動作成)
+#   archive:  true で受信トレイから外す
+#   mark_read: true で既読化
+#   trash:    true でゴミ箱へ (※非推奨。確実に不要なものだけ)
+
+default_label: "Org/Review"  # どのルールにもマッチしなかった場合
+
+rules:
+  # --- 必要 (重要) ---
+  - name: "請求・支払い"
+    match:
+      subject: "(invoice|請求|支払|領収|receipt|billing)"
+    action:
+      label: "Org/Bills"
+      archive: true
+
+  - name: "仕事関連 (社内ドメイン)"
+    match:
+      from: "@example\\.co\\.jp$"   # ← 自分の会社ドメインに書き換える
+    action:
+      label: "Org/Work"
+      archive: false                 # 受信トレイに残す
+
+  - name: "GitHub 通知"
+    match:
+      from: "@github\\.com$"
+    action:
+      label: "Org/GitHub"
+      archive: true
+
+  - name: "カレンダー・会議招待"
+    match:
+      subject: "(invitation|招待|meeting|会議|calendar)"
+    action:
+      label: "Org/Calendar"
+      archive: false
+
+  # --- 不要 (一斉配信・プロモーション) ---
+  - name: "ニュースレター・販促"
+    match:
+      has_list_unsubscribe: true
+    action:
+      label: "Org/Unwanted"
+      archive: true
+      mark_read: true
+
+  - name: "プロモーション件名"
+    match:
+      subject: "(セール|sale|キャンペーン|お得|限定|クーポン|coupon|off%)"
+    action:
+      label: "Org/Unwanted"
+      archive: true
+      mark_read: true

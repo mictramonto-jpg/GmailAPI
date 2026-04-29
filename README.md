@@ -19,6 +19,17 @@ Gmail を自動仕分けする 2 つの実装が含まれます。
 PC で `python local_server.py` を実行してブラウザでアクセスする版。
 **データを完全にローカルに保つ**ことができ、既存の `credentials.json` をそのまま使えます。
 
+**Mac / Linux**:
+```bash
+cd ~/GmailAPI
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp rules.example.yaml rules.yaml    # 初回のみ
+python local_server.py
+```
+
+**Windows (PowerShell)**:
 ```powershell
 cd $HOME\GmailAPI
 py -m venv .venv
@@ -31,7 +42,9 @@ python local_server.py
 → ブラウザが自動で <http://localhost:5000> を開きます。
 
 機能は GAS 版とほぼ同等 (実行・分析・ルール編集・ホワイトリスト・解除リンク・LLM 切替・キャッシュ)。
-PC 起動中のみ動作。自動実行はタスクスケジューラ要。
+PC 起動中のみ動作。自動実行はタスクスケジューラ / cron 要。
+
+**詳細仕様は [`SPECIFICATION.md`](./SPECIFICATION.md) を参照** (全機能・OS 別コマンド・トラブルシュート完備)。
 
 ## CLI 版 (Python)
 

@@ -18,11 +18,12 @@ from dataclasses import dataclass
 from typing import Iterable
 
 import yaml
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+
+# 重い Google 系のインポートは関数内で遅延ロードする (テスト容易性のため)
+try:
+    from googleapiclient.errors import HttpError  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - tests run without googleapiclient installed
+    HttpError = Exception  # type: ignore[assignment,misc]
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
@@ -30,6 +31,11 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 # ---------- 認証 ----------
 
 def get_service(credentials_path: str, token_path: str):
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+
     creds = None
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
@@ -250,10 +256,18 @@ def sender_domain(addr: str) -> str:
     return addr.split("@", 1)[1] if "@" in addr else addr
 
 
-def analyze(service, query: str, max_results: int, top_n: int = 20) -> None:
-    """受信トレイをスキャンして送信者・メルマガ統計を表示する。"""
+@dataclass
+class InboxStats:
+    sender_count: Counter
+    domain_count: Counter
+    unsub_sender_count: Counter
+    promo_count: int
+
+
+def collect_inbox_stats(service, query: str, max_results: int) -> InboxStats:
+    """受信トレイから送信者・ドメイン・メルマガの集計を取る (副作用なし)。"""
     msg_ids = list_message_ids(service, query, max_results)
-    print(f"対象メール: {len(msg_ids)} 件 (query={query!r})\n")
+    print(f"対象メール: {len(msg_ids)} 件 (query={query!r})")
 
     sender_count: Counter[str] = Counter()
     domain_count: Counter[str] = Counter()
@@ -281,32 +295,90 @@ def analyze(service, query: str, max_results: int, top_n: int = 20) -> None:
         if i % 50 == 0:
             print(f"  ... {i}/{len(msg_ids)} 件処理済み")
 
+    return InboxStats(sender_count, domain_count, unsub_sender_count, promo_count)
+
+
+def print_stats(stats: InboxStats, top_n: int = 20) -> None:
     print(f"\n=== サマリー ===")
-    print(f"  ユニーク送信者: {len(sender_count)}")
-    print(f"  ユニークドメイン: {len(domain_count)}")
-    print(f"  メルマガ系 (List-Unsubscribe あり): {promo_count} 件 / {len(unsub_sender_count)} 送信者")
+    print(f"  ユニーク送信者: {len(stats.sender_count)}")
+    print(f"  ユニークドメイン: {len(stats.domain_count)}")
+    print(f"  メルマガ系 (List-Unsubscribe あり): "
+          f"{stats.promo_count} 件 / {len(stats.unsub_sender_count)} 送信者")
 
     print(f"\n=== 送信者 TOP{top_n} (件数) ===")
-    for addr, n in sender_count.most_common(top_n):
-        marker = " 📨" if addr in unsub_sender_count else ""
+    for addr, n in stats.sender_count.most_common(top_n):
+        marker = " 📨" if addr in stats.unsub_sender_count else ""
         print(f"  {n:>4}  {addr}{marker}")
 
     print(f"\n=== ドメイン TOP{top_n} ===")
-    for dom, n in domain_count.most_common(top_n):
+    for dom, n in stats.domain_count.most_common(top_n):
         print(f"  {n:>4}  @{dom}")
 
-    if unsub_sender_count:
+    if stats.unsub_sender_count:
         print(f"\n=== メルマガ送信者 TOP{top_n} (解除候補) ===")
-        for addr, n in unsub_sender_count.most_common(top_n):
+        for addr, n in stats.unsub_sender_count.most_common(top_n):
             print(f"  {n:>4}  {addr}")
 
+
+def generate_rules_yaml(stats: InboxStats, top_unwanted: int = 10, top_domains: int = 5) -> str:
+    """統計から rules.yaml の初期版を生成する (テキスト)。"""
+    lines: list[str] = [
+        "# 自動生成された Gmail 整理ルール (--init)",
+        "# 受信トレイの実態をベースに作成。必要に応じて編集してください。",
+        "",
+        "default_label: \"Org/Review\"",
+        "",
+        "rules:",
+        "  # --- 必要 (テンプレート: 自分の用途に合わせて編集) ---",
+        "  - name: \"請求・支払い\"",
+        "    match:",
+        "      subject: \"(invoice|請求|支払|領収|receipt|billing)\"",
+        "    action:",
+        "      label: \"Org/Bills\"",
+        "      archive: true",
+        "",
+        "  - name: \"カレンダー・会議招待\"",
+        "    match:",
+        "      subject: \"(invitation|招待|meeting|会議|calendar)\"",
+        "    action:",
+        "      label: \"Org/Calendar\"",
+        "      archive: false",
+        "",
+    ]
+
+    if stats.unsub_sender_count:
+        lines.append("  # --- 不要 (受信トレイで多いメルマガ送信者) ---")
+        for addr, n in stats.unsub_sender_count.most_common(top_unwanted):
+            esc = re.escape(addr)
+            lines.append(f"  - name: \"Unwanted: {addr} ({n}件)\"")
+            lines.append(f"    match: {{ from: \"{esc}\" }}")
+            lines.append(f"    action: {{ label: \"Org/Unwanted\", archive: true, mark_read: true }}")
+        lines.append("")
+
+    lines.append("  # --- 不要 (汎用: 一斉配信メール全般) ---")
+    lines.append("  - name: \"ニュースレター・販促\"")
+    lines.append("    match:")
+    lines.append("      has_list_unsubscribe: true")
+    lines.append("    action:")
+    lines.append("      label: \"Org/Unwanted\"")
+    lines.append("      archive: true")
+    lines.append("      mark_read: true")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def analyze(service, query: str, max_results: int, top_n: int = 20) -> InboxStats:
+    """受信トレイをスキャンして送信者・メルマガ統計を表示する。"""
+    stats = collect_inbox_stats(service, query, max_results)
+    print_stats(stats, top_n)
     print("\n--- ルール例 (rules.yaml に追記する候補) ---")
     print("rules:")
-    for addr, _ in unsub_sender_count.most_common(5):
+    for addr, _ in stats.unsub_sender_count.most_common(5):
         esc = re.escape(addr)
         print(f"  - name: \"Unwanted: {addr}\"")
         print(f"    match: {{ from: \"{esc}\" }}")
         print(f"    action: {{ label: \"Org/Unwanted\", archive: true, mark_read: true }}")
+    return stats
 
 
 def main() -> int:
@@ -322,6 +394,8 @@ def main() -> int:
                         help="List-Unsubscribe を持つメールの解除リンク一覧を Markdown で出力するパス")
     parser.add_argument("--analyze", action="store_true",
                         help="受信トレイをスキャンして送信者統計を表示 (ルール作成の参考用)")
+    parser.add_argument("--init", action="store_true",
+                        help="受信トレイ分析からルール rules.yaml を自動生成する")
     args = parser.parse_args()
 
     if not os.path.exists(args.credentials):
@@ -332,6 +406,23 @@ def main() -> int:
     if args.analyze:
         service = get_service(args.credentials, args.token)
         analyze(service, args.query, args.max)
+        return 0
+
+    if args.init:
+        if os.path.exists(args.rules):
+            ans = input(f"{args.rules} は既に存在します。上書きしますか? [y/N]: ").strip().lower()
+            if ans != "y":
+                print("中止しました。")
+                return 1
+        service = get_service(args.credentials, args.token)
+        stats = collect_inbox_stats(service, args.query, args.max)
+        print_stats(stats)
+        content = generate_rules_yaml(stats)
+        with open(args.rules, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"\n✓ {args.rules} を生成しました ({len(stats.unsub_sender_count)} 送信者ぶんのメルマガ解除ルール)")
+        print(f"  内容を確認・編集したら以下を実行:")
+        print(f"  python gmail_organizer.py --rules {args.rules} --query {args.query!r} --dry-run")
         return 0
 
     if not os.path.exists(args.rules):

@@ -72,7 +72,7 @@ $EDITOR rules.yaml   # 自分のドメインや好みに合わせて書き換え
 
 ## 3. 使い方
 
-### Step 0: 受信トレイを分析してルール作成のヒントを得る (推奨)
+### Step 0a: 受信トレイを分析する (推奨)
 
 ```bash
 python gmail_organizer.py --analyze --query "in:inbox newer_than:30d" --max 500
@@ -83,9 +83,16 @@ python gmail_organizer.py --analyze --query "in:inbox newer_than:30d" --max 500
 - 送信者 TOP20 (件数順、メルマガ系には 📨 マーク)
 - ドメイン TOP20
 - メルマガ送信者 TOP20 (解除候補)
-- そのまま `rules.yaml` に貼れるルール雛形
 
-これを見てから `rules.yaml` を編集すると効率的です。
+### Step 0b: ルールを自動生成する (おすすめ)
+
+```bash
+python gmail_organizer.py --init --query "in:inbox newer_than:30d" --max 500
+```
+
+分析結果から `rules.yaml` を自動生成します。
+メルマガ送信者 TOP10 がそれぞれ「不要ラベル + アーカイブ + 既読化」ルールとして
+ファイルに書き出されるので、エディタで微調整してすぐ使えます。
 
 ### まずはドライラン (実適用なし)
 
@@ -129,6 +136,7 @@ python gmail_organizer.py \
 | `--dry-run` | 適用せず判定のみ | off |
 | `--unsubscribe-out` | 解除リンクを Markdown 出力 | なし |
 | `--analyze` | 受信トレイ統計を表示 (ルール作成の参考) | off |
+| `--init` | 統計から rules.yaml を自動生成 | off |
 | `--credentials` | OAuth JSON のパス | `credentials.json` |
 | `--token` | トークン保存先 | `token.json` |
 
